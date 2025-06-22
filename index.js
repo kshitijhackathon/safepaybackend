@@ -23,54 +23,53 @@ const app = express();
 // 1. CORS Middleware (MUST come before session middleware when using credentials)
 app.use(cors({
   origin: [
-    'https://safepayfrontend-m7ye.vercel.app/', // <-- Replace with your actual Vercel frontend URL
+    'https://safepayfrontend-m7ye.vercel.app'
   ],
-  credentials: true // Crucial: Allows cookies to be sent with cross-origin requests
+  credentials: true
 }));
 
 // 2. JSON Body Parser
 app.use(express.json());
 
-// 3. File Upload Middleware
-// app.use(fileUpload({
-//   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max file size
-//   abortOnLimit: true,
-//   responseOnLimit: 'File size limit has been reached',
-//   useTempFiles: true,
-//   tempFileDir: '/tmp/'
-// }));
+// MongoDB connection with SSL fixes
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://codefreaks0:nG1CfDIdY5HkorXh@safepay.0ivwjjc.mongodb.net/safepay?retryWrites=true&w=majority&ssl=true&tlsInsecure=true';
 
-// MongoDB connection (moved up to be available for session store)
-// NOTE: For production, use environment variables for sensitive data like MongoDB URI and session secret.
-mongoose.connect(
-  process.env.MONGODB_URI || 'mongodb+srv://codefreaks0:nG1CfDIdY5HkorXh@safepay.0ivwjjc.mongodb.net/?retryWrites=true&w=majority&appName=safepay', 
-  {
+mongoose.connect(MONGODB_URI, {
+  ssl: true,
+  sslValidate: false,
+  tls: true,
+  tlsInsecure: true,
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
+  bufferMaxEntries: 0,
+  useNewUrlParser: true,
+  useUnifiedTopology: true
 })
 .then(() => console.log('MongoDB connected successfully.'))
 .catch(err => console.error('MongoDB connection error:', err));
 
-// 3. Express Session Middleware
+// Express Session Middleware
 app.use(session({
-  name: 'safepay.sid', // Explicitly set a custom session cookie name
-  secret: process.env.SESSION_SECRET,
+  name: 'safepay.sid',
+  secret: process.env.SESSION_SECRET || 'fallback-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   proxy: true,
   store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI ,
+    mongoUrl: MONGODB_URI,
     collectionName: 'sessions',
-    ttl: 1000 * 60 * 60 * 24 // 24 hours (matches cookie maxAge)
+    ttl: 1000 * 60 * 60 * 24
   }),
   cookie: {
     maxAge: 1000 * 60 * 60 * 24,
-    secure: false, // Set to true if using HTTPS in production
+    secure: false,
     httpOnly: true,
     sameSite: 'lax',
     path: '/'
   }
 }));
 
-// Add a test middleware to confirm session is initialized
+// Session debug middleware
 app.use((req, res, next) => {
   console.log('Middleware: Session ID on incoming request:', req.sessionID);
   console.log('Middleware: req.session initialized:', !!req.session);
@@ -87,14 +86,15 @@ app.post('/login', async (req, res) => {
   const { phone } = req.body;
   console.log('Login attempt for phone:', phone);
   if (!phone) return res.status(400).json({ error: 'Phone required' });
+  
   try {
     const user = await User.findOne({ phone });
     console.log('User found (null if not found): ', user);
+    
     if (user) {
       req.session.userId = user._id; 
       console.log('Login Success: Session userId set to: ', req.session.userId);
       res.json({ success: true, user });
-
     } else {
       console.log('User not found, redirecting to signup...');
       res.json({ exists: false, redirect: 'signup' });
@@ -105,21 +105,21 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// Signup route
 app.post('/signup', async (req, res) => {
   const { phone, name } = req.body;
   if (!phone || !name) return res.status(400).json({ error: 'Phone and name required' });
+  
   try {
     const newUser = await User.create({ phone, name });
-    req.session.userId = newUser._id; // Set user ID in session
+    req.session.userId = newUser._id;
     console.log('Signup Success: Session userId set to: ', req.session.userId);
     res.json({ success: true, user: newUser });
   } catch (err) {
-    console.error('Error during signup:', err); // Log the full error for debugging
+    console.error('Error during signup:', err);
     if (err.code === 11000) {
-      // Duplicate key error (e.g., phone number already exists)
       res.status(400).json({ error: 'User with this phone number already exists.', details: err.message });
     } else {
-      // Other database errors
       res.status(500).json({ error: 'Failed to create user due to a database error.', details: err.message });
     }
   }
@@ -136,8 +136,8 @@ app.get('/profile/:userId', async (req, res) => {
 
   try {
     const user = await User.findById(req.params.userId)
-      .populate('paymentMethods') // Populate payment methods
-      .populate('scamReports'); // Populate scam reports
+      .populate('paymentMethods')
+      .populate('scamReports');
 
     if (!user) {
       console.log('Profile: User not found for userId:', req.params.userId);
@@ -158,7 +158,7 @@ app.post('/logout', (req, res) => {
       console.error('Error destroying session:', err);
       return res.status(500).json({ error: 'Logout failed' });
     }
-    res.clearCookie('safepay.sid'); // Clear the specific session cookie name
+    res.clearCookie('safepay.sid');
     res.json({ success: true });
   });
 });
@@ -168,6 +168,7 @@ app.put('/profile/:userId', async (req, res) => {
   if (!req.session.userId || req.session.userId.toString() !== req.params.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  
   const { name, email, address, dob } = req.body;
 
   if (!name && !email && !address && !dob) {
@@ -177,8 +178,8 @@ app.put('/profile/:userId', async (req, res) => {
   try {
     const updatedUser = await User.findByIdAndUpdate(
       req.params.userId,
-      { $set: { name, email, address, dob } }, // Use $set to update specific fields
-      { new: true, runValidators: true } // Return the updated document and run schema validators
+      { $set: { name, email, address, dob } },
+      { new: true, runValidators: true }
     );
 
     if (!updatedUser) {
@@ -199,11 +200,9 @@ app.post('/api/payment-methods', async (req, res) => {
 
   const { type, name, upiId, cardNumber, expiryDate, accountNumber, ifscCode } = req.body;
 
-  // --- DEBUG LOGS START ---
   console.log('--- Receiving Payment Method POST Request ---');
   console.log('Session User ID:', req.session.userId);
   console.log('Received Body:', req.body);
-  // --- DEBUG LOGS END ---
 
   try {
     const newPaymentMethod = new PaymentMethod({
@@ -217,23 +216,16 @@ app.post('/api/payment-methods', async (req, res) => {
       ifscCode,
     });
 
-    // --- DEBUG LOGS START ---
     console.log('PaymentMethod object before save:', newPaymentMethod);
-    // --- DEBUG LOGS END ---
-
     await newPaymentMethod.save();
 
-    // Update the User document with the new payment method reference
     await User.findByIdAndUpdate(
       req.session.userId,
       { $push: { paymentMethods: newPaymentMethod._id } },
-      { new: true } // Return the updated user document (optional, but good practice)
+      { new: true }
     );
 
-    // --- DEBUG LOGS START ---
     console.log('PaymentMethod saved successfully:', newPaymentMethod);
-    // --- DEBUG LOGS END ---
-
     res.status(201).json({ success: true, method: newPaymentMethod });
   } catch (err) {
     console.error('Error adding payment method:', err);
@@ -243,10 +235,10 @@ app.post('/api/payment-methods', async (req, res) => {
 
 // Get Payment Methods for a user
 app.get('/api/payment-methods/:userId', async (req, res) => {
-  // Convert userId to string for proper comparison and security
   if (!req.session.userId || req.session.userId.toString() !== req.params.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  
   try {
     const paymentMethods = await PaymentMethod.find({ userId: req.params.userId });
     console.log(`Fetched ${paymentMethods.length} payment methods for user ${req.params.userId}`);
@@ -264,10 +256,11 @@ app.delete('/api/payment-methods/:methodId', async (req, res) => {
     if (!method) {
       return res.status(404).json({ error: 'Payment method not found' });
     }
-    // Ensure the method belongs to the logged-in user
+    
     if (!req.session.userId || method.userId.toString() !== req.session.userId.toString()) {
       return res.status(401).json({ error: 'Unauthorized to delete this method' });
     }
+    
     await PaymentMethod.findByIdAndDelete(req.params.methodId);
     res.json({ success: true, message: 'Payment method deleted successfully' });
   } catch (err) {
@@ -278,15 +271,13 @@ app.delete('/api/payment-methods/:methodId', async (req, res) => {
 
 // Set Default Payment Method
 app.post('/api/payment-methods/:userId/set-default/:methodId', async (req, res) => {
-  // Convert userId to string for proper comparison
   if (!req.session.userId || req.session.userId.toString() !== req.params.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  
   try {
-    // Unset current default for this user
     await PaymentMethod.updateMany({ userId: req.params.userId, isDefault: true }, { isDefault: false });
 
-    // Set new default
     const updatedMethod = await PaymentMethod.findByIdAndUpdate(
       req.params.methodId,
       { isDefault: true },
@@ -304,32 +295,30 @@ app.post('/api/payment-methods/:userId/set-default/:methodId', async (req, res) 
   }
 });
 
+// Multer setup for file uploads
 const scamScreenshotUpload = multer({ dest: 'uploads/scam_screenshots/' });
 
 // Add Scam Report route
 app.post('/api/scam-reports', scamScreenshotUpload.single('screenshot'), async (req, res) => {
-  // Ensure user is logged in
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Not logged in' });
   }
 
-  // Validate required fields
   const { reportType, scamContact, scamPlatform, scamDetails } = req.body;
   if (!reportType || !scamDetails) {
     return res.status(400).json({ error: 'Missing required fields: reportType and scamDetails are required.' });
   }
+  
   if (reportType !== 'other' && !scamContact) {
     return res.status(400).json({ error: 'Scam contact is required for this report type.' });
   }
 
   let screenshotUrl = null;
   if (req.file) {
-    // Save the relative path or URL to the uploaded screenshot
     screenshotUrl = `/uploads/scam_screenshots/${req.file.filename}`;
   }
 
   try {
-    // Prepare new scam report
     const newScamReport = new ScamReport({
       userId: req.session.userId,
       reportType,
@@ -341,7 +330,6 @@ app.post('/api/scam-reports', scamScreenshotUpload.single('screenshot'), async (
 
     await newScamReport.save();
 
-    // Link report to user
     await User.findByIdAndUpdate(
       req.session.userId,
       { $push: { scamReports: newScamReport._id } },
@@ -360,8 +348,9 @@ app.get('/api/scam-reports/:userId', async (req, res) => {
   if (!req.session.userId || req.session.userId.toString() !== req.params.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  
   try {
-    const scamReports = await ScamReport.find({ userId: req.params.userId }).sort({ createdAt: -1 }); // Sort by newest first
+    const scamReports = await ScamReport.find({ userId: req.params.userId }).sort({ createdAt: -1 });
     res.json(scamReports);
   } catch (err) {
     console.error('Error fetching scam reports:', err);
@@ -371,6 +360,7 @@ app.get('/api/scam-reports/:userId', async (req, res) => {
 
 // Process audio for voice analysis
 const ASSEMBLY_API_KEY = 'd328086b73264cd39534ba4e82a1046f';
+
 app.post('/api/process-audio', async (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Not logged in' });
@@ -379,12 +369,10 @@ app.post('/api/process-audio', async (req, res) => {
   // If transcript is sent directly (JSON)
   if (req.body && req.body.transcript) {
     try {
-      // Call your AI service with the transcript
       const response = await axios.post('http://localhost:8082/analyze-voice', {
         transcript: req.body.transcript
       });
       
-      // Return both transcript and analysis results
       return res.json({
         transcript: req.body.transcript,
         analysis: response.data
@@ -401,18 +389,16 @@ app.post('/api/process-audio', async (req, res) => {
     return res.status(400).json({ error: 'No audio file provided' });
   }
 
-  // Ensure uploads directory exists
   const uploadsDir = path.join(__dirname, 'uploads');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
   }
 
-  // Save the audio file temporarily
   const uploadPath = path.join(uploadsDir, `${Date.now()}-${audioFile.name}`);
   await audioFile.mv(uploadPath);
 
   try {
-    // 1. Upload audio to AssemblyAI
+    // Upload audio to AssemblyAI
     const audioData = fs.readFileSync(uploadPath);
     const uploadRes = await axios.post(
       'https://api.assemblyai.com/v2/upload',
@@ -426,7 +412,7 @@ app.post('/api/process-audio', async (req, res) => {
     );
     const audioUrl = uploadRes.data.upload_url;
 
-    // 2. Request transcription
+    // Request transcription
     const transcriptRes = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
       { audio_url: audioUrl },
@@ -434,7 +420,7 @@ app.post('/api/process-audio', async (req, res) => {
     );
     const transcriptId = transcriptRes.data.id;
 
-    // 3. Poll for completion
+    // Poll for completion
     let transcript;
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 2000));
@@ -457,20 +443,18 @@ app.post('/api/process-audio', async (req, res) => {
       return res.status(500).json({ error: 'Transcription timed out' });
     }
 
-    // 4. Run scam analysis on the transcribed text
+    // Run scam analysis on the transcribed text
     try {
       const analysisResponse = await axios.post('http://localhost:8082/analyze-voice', {
         transcript: transcript
       });
       
-      // Return both transcript and analysis results
       return res.json({
         transcript: transcript,
         analysis: analysisResponse.data
       });
     } catch (analysisError) {
       console.error('Error analyzing transcribed text:', analysisError);
-      // Return transcript even if analysis fails
       return res.json({
         transcript: transcript,
         analysis: {
@@ -485,7 +469,6 @@ app.post('/api/process-audio', async (req, res) => {
     }
 
   } catch (error) {
-    // Clean up temp file if it exists
     if (fs.existsSync(uploadPath)) {
       fs.unlinkSync(uploadPath);
     }
@@ -500,14 +483,13 @@ app.post('/api/transactions/process', async (req, res) => {
     return res.status(401).json({ error: 'Not logged in' });
   }
 
-  const { fromUpiId, toUpiId, amount, status = 'success' } = req.body; // Default status to 'success' for now
+  const { fromUpiId, toUpiId, amount, status = 'success' } = req.body;
 
   if (!fromUpiId || !toUpiId || !amount) {
     return res.status(400).json({ error: 'From UPI ID, To UPI ID, and Amount are required' });
   }
 
   try {
-    // Generate a 12-digit random alphanumeric transaction ID
     const randomPart = (Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2)).substring(0, 12).toUpperCase();
     const transactionId = `TXN-${randomPart}`;
 
@@ -565,7 +547,7 @@ app.get('/api/security/mfa-settings/:userId', async (req, res) => {
   if (!req.session.userId || req.session.userId.toString() !== req.params.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  // Dummy response for now (customize as needed)
+  
   res.json({
     simSwapEnabled: false,
     lastChecked: null,
@@ -613,7 +595,6 @@ app.post('/api/analyze-video', multer().single('video'), async (req, res) => {
       return res.status(400).json({ error: 'No video file uploaded' });
     }
     const form = new FormData();
-    // Send as 'video_file' to FastAPI
     form.append('video_file', req.file.buffer, req.file.originalname);
     const fastapiRes = await fetch('http://localhost:8090/analyze-video', {
       method: 'POST',
@@ -645,7 +626,7 @@ app.post('/api/analyze-whatsapp', upload.single('screenshot'), async (req, res) 
   }
 });
 
-// --- Add UPI AI Validation Endpoint (robust) ---
+// UPI AI Validation Endpoint
 app.post('/api/ai/validate-upi', async (req, res) => {
   try {
     const { upiId } = req.body;
@@ -657,7 +638,6 @@ app.post('/api/ai/validate-upi', async (req, res) => {
     const upiPattern = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/;
     const isValid = upiPattern.test(upiId);
 
-    // You can add more advanced checks or ML here if needed
     let is_suspicious = !isValid;
     let confidence = isValid ? 0.95 : 0.5;
     let flags = isValid ? [] : ['Invalid UPI format'];
@@ -671,7 +651,6 @@ app.post('/api/ai/validate-upi', async (req, res) => {
     });
   } catch (error) {
     console.error('Error in /api/ai/validate-upi:', error);
-    // Always return a fallback response
     res.json({
       is_suspicious: false,
       confidence: 0.5,
@@ -681,22 +660,20 @@ app.post('/api/ai/validate-upi', async (req, res) => {
   }
 });
 
-// --- Add QR Scam Detection Endpoint (robust) ---
+// QR Scam Detection Endpoint
 app.post('/api/ai/qr-scam-detect', async (req, res) => {
   const { qrText } = req.body;
   if (!qrText) {
     return res.status(400).json({ error: 'QR text is required' });
   }
+  
   try {
-    // Call the scam_detector_api.py Flask service
     const response = await axios.post('http://localhost:8090/predict-text', {
       text: qrText
     });
-    // Return the scam detection result to the frontend
     res.json(response.data);
   } catch (error) {
     console.error('Error calling scam_detector_api:', error.message);
-    // Fallback: always return a safe response
     res.json({
       label: 'not_scam',
       probability: 0.1,
@@ -707,11 +684,12 @@ app.post('/api/ai/qr-scam-detect', async (req, res) => {
 
 const uploadVoice = multer();
 
-// --- Voice File Fraud Detection Endpoint ---
+// Voice File Fraud Detection Endpoint
 app.post('/api/ai/analyze-voice-file', uploadVoice.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
+  
   try {
     const formData = new FormData();
     formData.append('file', req.file.buffer, {
@@ -733,10 +711,7 @@ app.post('/api/ai/analyze-voice-file', uploadVoice.single('file'), async (req, r
 // Serve static files for uploaded scam screenshots
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-const PORT = 6900;
+const PORT = process.env.PORT || 6900;
 app.listen(PORT, () => {
   console.log(`Node.js backend running on port ${PORT}`);
 });
-
-// For Render deployment, set the start command to:
-// node index.js
