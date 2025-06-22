@@ -35,10 +35,6 @@ app.use(express.json());
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://codefreaks0:nG1CfDIdY5HkorXh@safepay.0ivwjjc.mongodb.net/safepay?retryWrites=true&w=majority&ssl=true&tlsInsecure=true';
 
 mongoose.connect(MONGODB_URI, {
-  ssl: true,
-  sslValidate: false,
-  tls: true,
-  tlsInsecure: true,
   serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
   bufferMaxEntries: 0,
