@@ -23,7 +23,8 @@ const app = express();
 // 1. CORS Middleware (MUST come before session middleware when using credentials)
 app.use(cors({
   origin: [
-    'https://safepayfrontend-m7ye.vercel.app'
+    'https://safepayfrontend-m7ye.vercel.app',
+    'http://localhost:5173'
   ],
   credentials: true
 }));
@@ -35,6 +36,10 @@ app.use(express.json());
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://codefreaks0:nG1CfDIdY5HkorXh@safepay.0ivwjjc.mongodb.net/safepay?retryWrites=true&w=majority&ssl=true&tlsInsecure=true';
 
 mongoose.connect(MONGODB_URI, {
+  ssl: true,
+  sslValidate: false,
+  tls: true,
+  tlsInsecure: true,
   serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
   bufferMaxEntries: 0,
