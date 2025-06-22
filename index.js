@@ -42,7 +42,7 @@ app.use(express.json());
 
 // MongoDB connection (moved up to be available for session store)
 // NOTE: For production, use environment variables for sensitive data like MongoDB URI and session secret.
-mongoose.connect(process.env.MONGODB_URI, {
+process.env.MONGODB_URI || 'mongodb+srv://codefreaks0:nG1CfDIdY5HkorXh@safepay.0ivwjjc.mongodb.net/?retryWrites=true&w=majority&appName=safepay', {
 })
 .then(() => console.log('MongoDB connected successfully.'))
 .catch(err => console.error('MongoDB connection error:', err));
