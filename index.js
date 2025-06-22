@@ -12,8 +12,9 @@ const path = require('path');
 const axios = require('axios');
 const fs = require('fs');
 const multer = require('multer');
-const fetch = require('node-fetch');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const FormData = require('form-data');
+require('dotenv').config();
 
 const app = express();
 
@@ -41,7 +42,7 @@ app.use(express.json());
 
 // MongoDB connection (moved up to be available for session store)
 // NOTE: For production, use environment variables for sensitive data like MongoDB URI and session secret.
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://yashsajwan2004:1NV2Y7QwL6YU8nEF@cluster0.ycb55bx.mongodb.net/', {
+mongoose.connect(process.env.MONGODB_URI, {
 })
 .then(() => console.log('MongoDB connected successfully.'))
 .catch(err => console.error('MongoDB connection error:', err));
@@ -49,12 +50,12 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://yashsajwan2004:1NV2Y7
 // 3. Express Session Middleware
 app.use(session({
   name: 'safepay.sid', // Explicitly set a custom session cookie name
-  secret: process.env.SESSION_SECRET || 'd01c0b3a3c9b7e7a7f4a2b9d8e6c5a4f3b2c1d0e9a8f7b6a5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   proxy: true,
   store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI || 'mongodb+srv://yashsajwan2004:1NV2Y7QwL6YU8nEF@cluster0.ycb55bx.mongodb.net/',
+    mongoUrl: process.env.MONGODB_URI ,
     collectionName: 'sessions',
     ttl: 1000 * 60 * 60 * 24 // 24 hours (matches cookie maxAge)
   }),
