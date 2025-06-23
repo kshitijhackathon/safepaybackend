@@ -20,11 +20,19 @@ const app = express();
 
 // --- BEGIN CORE MIDDLEWARE CONFIGURATION ---
 
+const allowedOrigins = [
+  'https://safepayfrontend-m7ye.vercel.app',
+  'http://localhost:5173'
+];
+
 app.use(cors({
-  origin: [
-    'https://safepayfrontend-m7ye.vercel.app',
-    'http://localhost:5173'
-  ],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
