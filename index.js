@@ -33,7 +33,7 @@ app.use(cors({
 app.use(express.json());
 
 // MongoDB connection with SSL fixes
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://codefreaks0:nG1CfDIdY5HkorXh@safepay.0ivwjjc.mongodb.net/safepay?retryWrites=true&w=majority&ssl=true&tlsInsecure=true';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://kshitijsingh066:pszhlXu1MjjQpsrl@cluster0.swurqoz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 mongoose.connect(MONGODB_URI, {
   ssl: true,
